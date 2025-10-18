@@ -14,9 +14,5 @@ COPY . .
 # Expose the port your app listens on (5000 is default for Flask)
 EXPOSE 5000
 
-# Healthcheck (adjust the endpoint if using something else or CLI app)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl --fail http://localhost:5000/ || exit 1
-
 # Run the app from the helloworld directory
 CMD ["python", "helloworld/app.py"]
