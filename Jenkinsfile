@@ -28,6 +28,17 @@ spec:
         limits:
           memory: "2Gi"
           cpu: "1000m"
+    - name: sonar-scanner
+      image: sonarsource/sonar-scanner-cli:latest
+      command: [sleep]
+      args: [99d]
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
     - name: kaniko
       image: gcr.io/kaniko-project/executor:v1.19.0-debug
       command: ['/busybox/cat']
@@ -54,6 +65,7 @@ spec:
         }
     }
 
+
     environment {
         DOCKER_USERNAME = 'davidbulke'
         IMAGE_NAME = 'py-app'
@@ -70,6 +82,7 @@ spec:
                 sh 'ls -la'
             }
         }
+
 
         stage('Trivy Security Scan - Source Code') {
             steps {
@@ -98,6 +111,40 @@ spec:
                 }
             }
         }
+
+
+        stage('SonarQube Code Analysis') {
+            steps {
+                withVault([
+                    vaultSecrets: [
+                        [
+                            path: 'secret/jenkins/sonarqube',
+                            engineVersion: 2,
+                            secretValues: [
+                                [envVar: 'SONAR_TOKEN', vaultKey: 'token'],
+                                [envVar: 'SONAR_URL', vaultKey: 'url']
+                            ]
+                        ]
+                    ]
+                ]) {
+                    container('sonar-scanner') {
+                        sh '''
+                            sonar-scanner \
+                              -Dsonar.projectKey=python-app \
+                              -Dsonar.projectName="Python Flask Application" \
+                              -Dsonar.projectVersion=${GIT_COMMIT_SHORT} \
+                              -Dsonar.sources=helloworld \
+                              -Dsonar.python.version=3.12 \
+                              -Dsonar.sourceEncoding=UTF-8 \
+                              -Dsonar.exclusions=**/*test*/**,**/__pycache__/**,**/venv/**,.git/** \
+                              -Dsonar.host.url=${SONAR_URL} \
+                              -Dsonar.token=${SONAR_TOKEN}
+                        '''
+                        echo "✅ SonarQube code quality analysis completed!"
+                    }
+                }
+            }
+        }
         
         stage('Build and Push Docker Image') {
             steps {
@@ -115,9 +162,8 @@ spec:
                 ]) {
                     container('kaniko') {
                         script {
-                            echo "Fetching DockerHub credentials from Vault..."
+                            echo "🔐 Fetching DockerHub credentials from Vault..."
                             
-                            // Create Docker config from Vault secrets
                             sh '''
                                 mkdir -p /kaniko/.docker
                                 echo "{\\"auths\\":{\\"https://index.docker.io/v1/\\":{\\"username\\":\\"${DOCKER_USER}\\",\\"password\\":\\"${DOCKER_PASS}\\"}}}" > /kaniko/.docker/config.json
@@ -131,7 +177,7 @@ spec:
                             }
                             def tagString = tags.join(' ')
                             
-                            echo "Building and pushing image with Kaniko..."
+                            echo "🐳 Building and pushing image with Kaniko..."
                             sh """
                                 /kaniko/executor \
                                     --context=\${PWD} \
@@ -145,13 +191,13 @@ spec:
                                     --verbosity=info
                             """
                             
-                            echo "DockerHub credentials securely fetched from Vault"
-                            echo "Image successfully pushed: ${FULL_IMAGE_NAME}"
+                            echo "✅ Image successfully pushed: ${FULL_IMAGE_NAME}"
                         }
                     }
                 }
             }
         }
+
 
         stage('Trivy Security Scan - Docker Image') {
             steps {
@@ -165,6 +211,7 @@ spec:
         }
     }
 
+
     post {
         success {
             script {
@@ -174,20 +221,21 @@ spec:
                     
                 echo """
                     
-                        CI PIPELINE SUCCESS! 🎉        
+                        CI/CD PIPELINE SUCCESS! 🎉        
                     
                     ✅ All Stages Completed:
                     - Source code security scanned (Trivy)
                     - Python dependencies installed
                     - Unit tests executed (pytest)
+                    - Code quality analyzed (SonarQube)
                     - Docker image built (Kaniko)
                     - Image security validated (Trivy)
                     - Image pushed to Docker Hub
 
-                    🔐 Security:
-                    - DockerHub credentials fetched from HashiCorp Vault
-                    - No hardcoded secrets in pipeline
-                    - Zero secrets exposure in Jenkins logs
+                    🔐 Security & Quality:
+                    - All credentials from HashiCorp Vault
+                    - SonarQube scans
+                    - Zero secrets in code or logs
 
                     🐳 Docker Images Published:
                     - ${FULL_IMAGE_NAME}${latestInfo}
