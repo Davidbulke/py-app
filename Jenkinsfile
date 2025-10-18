@@ -65,7 +65,6 @@ spec:
         }
     }
 
-
     environment {
         DOCKER_USERNAME = 'davidbulke'
         IMAGE_NAME = 'py-app'
@@ -82,7 +81,6 @@ spec:
                 sh 'ls -la'
             }
         }
-
 
         stage('Trivy Security Scan - Source Code') {
             steps {
@@ -111,7 +109,6 @@ spec:
                 }
             }
         }
-
 
         stage('SonarQube Code Analysis') {
             steps {
@@ -198,7 +195,6 @@ spec:
             }
         }
 
-
         stage('Trivy Security Scan - Docker Image') {
             steps {
                 container('trivy') {
@@ -209,7 +205,6 @@ spec:
                 }
             }
         }
-    }
 
         stage('Update GitOps Manifests') {
             steps {
@@ -229,44 +224,37 @@ spec:
                         echo "📝 Updating Kubernetes manifests in GitOps repository..."
                         
                         sh '''
-                            # Configure git
                             git config --global user.email "jenkins@ci.local"
                             git config --global user.name "Jenkins CI"
                             
-                            # Clone manifests repo
-                            rm -rf python-app-manifests || true
-                            git clone https://${GITHUB_TOKEN}@github.com/davidbulke/python-app-manifests.git
-                            cd python-app-manifests
+                            rm -rf py-app-manifests || true
+                            git clone https://${GITHUB_TOKEN}@github.com/davidbulke/py-app-manifests.git
+                            cd py-app-manifests
                             
-                            # Update image tag in deployment
                             sed -i "s|image: davidbulke/py-app:.*|image: ${FULL_IMAGE_NAME}|g" k8s/base/deployment.yaml
                             
-                            # Check if anything changed
                             if git diff --quiet; then
                                 echo "No changes to manifests"
                             else
-                                # Commit and push changes
                                 git add k8s/base/deployment.yaml
                                 git commit -m "Update image to ${FULL_IMAGE_NAME}
 
-        Build: #${BUILD_NUMBER}
-        Commit: ${GIT_COMMIT_SHORT}
-        Branch: ${GIT_BRANCH}"
+Build: #${BUILD_NUMBER}
+Commit: ${GIT_COMMIT_SHORT}
+Branch: ${GIT_BRANCH}"
                                 
-                                git push https://${GITHUB_TOKEN}@github.com/davidbulke/python-app-manifests.git main
-                                
-                                echo "✅ GitOps manifests updated successfully!"
+                                git push https://${GITHUB_TOKEN}@github.com/davidbulke/py-app-manifests.git main
+                                echo "✅ GitOps manifests updated!"
                             fi
                             
                             cd ..
-                            rm -rf python-app-manifests
+                            rm -rf py-app-manifests
                         '''
                     }
                 }
             }
         }
-
-
+    }
 
     post {
         success {
@@ -287,10 +275,11 @@ spec:
                     - Docker image built (Kaniko)
                     - Image security validated (Trivy)
                     - Image pushed to Docker Hub
+                    - GitOps manifests updated
 
                     🔐 Security & Quality:
                     - All credentials from HashiCorp Vault
-                    - SonarQube scans
+                    - SonarQube code quality analysis
                     - Zero secrets in code or logs
 
                     🐳 Docker Images Published:
@@ -304,6 +293,8 @@ spec:
                     
                     🔗 Pull Command:
                     docker pull ${FULL_IMAGE_NAME}
+                    
+                    🚀 GitOps: ArgoCD will deploy automatically
                 """
             }
         }
