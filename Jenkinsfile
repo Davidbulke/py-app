@@ -211,6 +211,62 @@ spec:
         }
     }
 
+        stage('Update GitOps Manifests') {
+            steps {
+                withVault([
+                    vaultSecrets: [
+                        [
+                            path: 'secret/jenkins/github',
+                            engineVersion: 2,
+                            secretValues: [
+                                [envVar: 'GITHUB_TOKEN', vaultKey: 'token'],
+                                [envVar: 'GITHUB_USER', vaultKey: 'username']
+                            ]
+                        ]
+                    ]
+                ]) {
+                    script {
+                        echo "📝 Updating Kubernetes manifests in GitOps repository..."
+                        
+                        sh '''
+                            # Configure git
+                            git config --global user.email "jenkins@ci.local"
+                            git config --global user.name "Jenkins CI"
+                            
+                            # Clone manifests repo
+                            rm -rf python-app-manifests || true
+                            git clone https://${GITHUB_TOKEN}@github.com/davidbulke/python-app-manifests.git
+                            cd python-app-manifests
+                            
+                            # Update image tag in deployment
+                            sed -i "s|image: davidbulke/py-app:.*|image: ${FULL_IMAGE_NAME}|g" k8s/base/deployment.yaml
+                            
+                            # Check if anything changed
+                            if git diff --quiet; then
+                                echo "No changes to manifests"
+                            else
+                                # Commit and push changes
+                                git add k8s/base/deployment.yaml
+                                git commit -m "Update image to ${FULL_IMAGE_NAME}
+
+        Build: #${BUILD_NUMBER}
+        Commit: ${GIT_COMMIT_SHORT}
+        Branch: ${GIT_BRANCH}"
+                                
+                                git push https://${GITHUB_TOKEN}@github.com/davidbulke/python-app-manifests.git main
+                                
+                                echo "✅ GitOps manifests updated successfully!"
+                            fi
+                            
+                            cd ..
+                            rm -rf python-app-manifests
+                        '''
+                    }
+                }
+            }
+        }
+
+
 
     post {
         success {
