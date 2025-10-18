@@ -56,7 +56,7 @@ spec:
 
     environment {
         DOCKER_USERNAME = 'davidbulke'
-        IMAGE_NAME = 'python-app'
+        IMAGE_NAME = 'py-app'
         GIT_COMMIT_SHORT = sh(script: "git rev-parse --short=8 HEAD", returnStdout: true).trim()
         GIT_BRANCH = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
         IMAGE_TAG = "${GIT_COMMIT_SHORT}-${BUILD_NUMBER}"
