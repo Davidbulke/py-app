@@ -18,5 +18,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD curl --fail http://localhost:5000/ || exit 1
 
-# Run the app
-CMD ["python", "hello.py"]
+# Run the app from the helloworld directory
+CMD ["python", "helloworld/app.py"]
