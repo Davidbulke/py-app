@@ -82,13 +82,50 @@ spec:
             }
         }
 
-        stage('Trivy Security Scan - Source Code') {
-            steps {
-                container('trivy') {
-                    sh '''
-                        trivy fs --exit-code 0 --severity HIGH,CRITICAL --no-progress . 
-                        echo "Source code security scan completed!"
-                    '''
+        stage('Security & Quality Checks') {
+            parallel {
+                stage('Trivy Source Code Scan') {
+                    steps {
+                        container('trivy') {
+                            sh '''
+                                trivy fs --exit-code 0 --severity HIGH,CRITICAL --no-progress . 
+                                echo "✅ Source code security scan completed!"
+                            '''
+                        }
+                    }
+                }
+                
+                stage('SonarQube Analysis') {
+                    steps {
+                        withVault([
+                            vaultSecrets: [
+                                [
+                                    path: 'secret/jenkins/sonarqube',
+                                    engineVersion: 2,
+                                    secretValues: [
+                                        [envVar: 'SONAR_TOKEN', vaultKey: 'token'],
+                                        [envVar: 'SONAR_URL', vaultKey: 'url']
+                                    ]
+                                ]
+                            ]
+                        ]) {
+                            container('sonar-scanner') {
+                                sh '''
+                                    sonar-scanner \
+                                      -Dsonar.projectKey=python-app \
+                                      -Dsonar.projectName="Python Flask Application" \
+                                      -Dsonar.projectVersion=${GIT_COMMIT_SHORT} \
+                                      -Dsonar.sources=helloworld \
+                                      -Dsonar.python.version=3.12 \
+                                      -Dsonar.sourceEncoding=UTF-8 \
+                                      -Dsonar.exclusions=**/*test*/**,**/__pycache__/**,**/venv/**,.git/** \
+                                      -Dsonar.host.url=${SONAR_URL} \
+                                      -Dsonar.token=${SONAR_TOKEN}
+                                '''
+                                echo "✅ SonarQube code quality analysis completed!"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -106,39 +143,6 @@ spec:
                 container('python') {
                     sh 'pytest --junitxml=pytest-results.xml'
                     junit 'pytest-results.xml'
-                }
-            }
-        }
-
-        stage('SonarQube Code Analysis') {
-            steps {
-                withVault([
-                    vaultSecrets: [
-                        [
-                            path: 'secret/jenkins/sonarqube',
-                            engineVersion: 2,
-                            secretValues: [
-                                [envVar: 'SONAR_TOKEN', vaultKey: 'token'],
-                                [envVar: 'SONAR_URL', vaultKey: 'url']
-                            ]
-                        ]
-                    ]
-                ]) {
-                    container('sonar-scanner') {
-                        sh '''
-                            sonar-scanner \
-                              -Dsonar.projectKey=python-app \
-                              -Dsonar.projectName="Python Flask Application" \
-                              -Dsonar.projectVersion=${GIT_COMMIT_SHORT} \
-                              -Dsonar.sources=helloworld \
-                              -Dsonar.python.version=3.12 \
-                              -Dsonar.sourceEncoding=UTF-8 \
-                              -Dsonar.exclusions=**/*test*/**,**/__pycache__/**,**/venv/**,.git/** \
-                              -Dsonar.host.url=${SONAR_URL} \
-                              -Dsonar.token=${SONAR_TOKEN}
-                        '''
-                        echo "✅ SonarQube code quality analysis completed!"
-                    }
                 }
             }
         }
@@ -195,12 +199,12 @@ spec:
             }
         }
 
-        stage('Trivy Security Scan - Docker Image') {
+        stage('Trivy Docker Image Scan') {
             steps {
                 container('trivy') {
                     sh """
                         trivy image --exit-code 0 --severity CRITICAL --no-progress ${FULL_IMAGE_NAME}
-                        echo "Docker image security scan finished!"
+                        echo "✅ Docker image security scan finished!"
                     """
                 }
             }
@@ -231,12 +235,12 @@ spec:
                             git clone https://${GITHUB_TOKEN}@github.com/davidbulke/py-app-manifests.git
                             cd py-app-manifests
                             
-                            sed -i "s|image: davidbulke/py-app:.*|image: ${FULL_IMAGE_NAME}|g" k8s/base/deployment.yaml
+                            sed -i "s|image: davidbulke/py-app:.*|image: ${FULL_IMAGE_NAME}|g" k8s/base/rollout.yaml
                             
                             if git diff --quiet; then
                                 echo "No changes to manifests"
                             else
-                                git add k8s/base/deployment.yaml
+                                git add k8s/base/rollout.yaml
                                 git commit -m "Update image to ${FULL_IMAGE_NAME}
 
 Build: #${BUILD_NUMBER}
@@ -269,9 +273,9 @@ Branch: ${GIT_BRANCH}"
                     
                     ✅ All Stages Completed:
                     - Source code security scanned (Trivy)
+                    - Code quality analyzed (SonarQube)
                     - Python dependencies installed
                     - Unit tests executed (pytest)
-                    - Code quality analyzed (SonarQube)
                     - Docker image built (Kaniko)
                     - Image security validated (Trivy)
                     - Image pushed to Docker Hub
@@ -294,7 +298,7 @@ Branch: ${GIT_BRANCH}"
                     🔗 Pull Command:
                     docker pull ${FULL_IMAGE_NAME}
                     
-                    🚀 GitOps: ArgoCD will deploy automatically
+                    🚀 GitOps: Argo Rollouts will deploy automatically
                 """
             }
         }
